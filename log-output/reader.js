@@ -3,29 +3,36 @@ const http = require("node:http");
 const fs = require("node:fs");
 
 const logPath = "/app/files/status.txt";
-const countPath = "/app/shared/count.txt";
+const pingPongUrl = "http://ping-pong-svc:2345/count";
 
-http.createServer((req, res) => {
+http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/") {
     try {
       const log = fs.readFileSync(logPath, "utf8");
 
-      const count = fs.existsSync(countPath)
-        ? fs.readFileSync(countPath, "utf8")
-        : "0";
+      const response = await fetch(pingPongUrl);
+
+      if (!response.ok) {
+        throw new Error("Cannot fetch ping count");
+      }
+
+      const count = await response.text();
 
       res.writeHead(200, {
         "Content-Type": "text/plain"
       });
 
       res.end(`${log}\nPing / Pongs: ${count}`);
-    } catch {
+    } catch (error) {
+      console.error(error);
       res.writeHead(503);
-      res.end("Log not available yet");
+      res.end("Service unavailable");
     }
-  } else {
-    res.writeHead(404);
-    res.end();
+
+    return;
   }
+
+  res.writeHead(404);
+  res.end("Not Found");
 }).listen(3000);
 

@@ -16,9 +16,6 @@ spec:
       volumes:
         - name: shared-logs
           emptyDir: {}
-        - name: shared-data
-          persistentVolumeClaim:
-            claimName: shared-claim
       containers:
         - name: log-writer
           image: log-writer:1.10
@@ -28,13 +25,11 @@ spec:
               mountPath: /app/files
 
         - name: log-reader
-          image: log-reader:1.11
+          image: log-reader:2.1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           volumeMounts:
             - name: shared-logs
               mountPath: /app/files
-            - name: shared-data
-              mountPath: /app/shared
 
