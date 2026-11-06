@@ -5,6 +5,8 @@ metadata:
   name: todo-app
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: todo-app
@@ -13,13 +15,20 @@ spec:
       labels:
         app: todo-app
     spec:
+      volumes:
+        - name: todo-images
+          persistentVolumeClaim:
+            claimName: todo-image-claim
       containers:
         - name: todo-app
-          image: todo-app:1.5
+          image: todo-app:1.12
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           env:
             - name: PORT
               value: "3000"
+          volumeMounts:
+            - name: todo-images
+              mountPath: /app/images
 

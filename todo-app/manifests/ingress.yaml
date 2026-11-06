@@ -5,7 +5,8 @@ metadata:
   name: todo-app-ingress
 spec:
   rules:
-    - http:
+    - host: todo.localhost
+      http:
         paths:
           - path: /
             pathType: Prefix
