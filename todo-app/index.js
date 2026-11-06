@@ -1,7 +1,5 @@
-
 const http = require("node:http");
 const fs = require("node:fs");
-const path = require("node:path");
 
 const PORT = process.env.PORT || 3000;
 const imagePath = "/app/images/image.jpg";
@@ -56,6 +54,7 @@ const server = http.createServer(async (req, res) => {
       res.end(image);
     } catch (error) {
       console.error(error);
+
       res.writeHead(503);
       res.end("Image unavailable");
     }
@@ -76,8 +75,29 @@ const server = http.createServer(async (req, res) => {
         </head>
         <body>
           <h1>Todo Application</h1>
+
           <p>Welcome to my Kubernetes Todo App!</p>
+
           <img src="/image" alt="Random image" width="600">
+
+          <h2>New Todo</h2>
+
+          <input
+            type="text"
+            id="todo-input"
+            maxlength="140"
+            placeholder="Enter a todo"
+          >
+
+          <button type="button">Send</button>
+
+          <h2>Todos</h2>
+
+          <ul>
+            <li>Learn Kubernetes</li>
+            <li>Complete DevOps exercises</li>
+            <li>Build a Todo application</li>
+          </ul>
         </body>
       </html>
     `);
@@ -92,4 +112,3 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Server started in port ${PORT}`);
 });
-
