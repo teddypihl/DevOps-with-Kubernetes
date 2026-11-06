@@ -1,9 +1,12 @@
+
 const http = require("node:http");
 const fs = require("node:fs");
 
 const PORT = process.env.PORT || 3000;
 const imagePath = "/app/images/image.jpg";
 const cacheTime = 10 * 60 * 1000;
+
+const backendUrl = "http://todo-backend-svc:2345";
 
 let downloadInProgress = null;
 
@@ -41,7 +44,17 @@ async function getImage() {
   return downloadInProgress;
 }
 
+function escapeHtml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 const server = http.createServer(async (req, res) => {
+
   if (req.method === "GET" && req.url === "/image") {
     try {
       const image = await getImage();
@@ -54,7 +67,6 @@ const server = http.createServer(async (req, res) => {
       res.end(image);
     } catch (error) {
       console.error(error);
-
       res.writeHead(503);
       res.end("Image unavailable");
     }
@@ -63,44 +75,112 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && req.url === "/") {
-    res.writeHead(200, {
-      "Content-Type": "text/html"
-    });
+    try {
+      const response = await fetch(`${backendUrl}/todos`);
 
-    res.end(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Todo Application</title>
-        </head>
-        <body>
-          <h1>Todo Application</h1>
+      if (!response.ok) {
+        throw new Error("Unable to fetch todos");
+      }
 
-          <p>Welcome to my Kubernetes Todo App!</p>
+      const todos = await response.json();
 
-          <img src="/image" alt="Random image" width="600">
+      const todoList = todos
+        .map(todo => `<li>${escapeHtml(todo)}</li>`)
+        .join("\n");
 
-          <h2>New Todo</h2>
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8"
+      });
 
-          <input
-            type="text"
-            id="todo-input"
-            maxlength="140"
-            placeholder="Enter a todo"
-          >
+      res.end(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Todo Application</title>
+          </head>
+          <body>
+            <h1>Todo Application</h1>
 
-          <button type="button">Send</button>
+            <p>Welcome to my Kubernetes Todo App!</p>
 
-          <h2>Todos</h2>
+            <img src="/image" alt="Random image" width="600">
 
-          <ul>
-            <li>Learn Kubernetes</li>
-            <li>Complete DevOps exercises</li>
-            <li>Build a Todo application</li>
-          </ul>
-        </body>
-      </html>
-    `);
+            <h2>New Todo</h2>
+
+            <form action="/todos" method="POST">
+              <input
+                type="text"
+                name="todo"
+                maxlength="140"
+                placeholder="Enter a todo"
+                required
+              >
+
+              <button type="submit">Send</button>
+            </form>
+
+            <h2>Todos</h2>
+
+            <ul>
+              ${todoList}
+            </ul>
+          </body>
+        </html>
+      `);
+    } catch (error) {
+      console.error(error);
+      res.writeHead(503);
+      res.end("Todo backend unavailable");
+    }
+
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/todos") {
+    let body = "";
+
+    for await (const chunk of req) {
+      body += chunk;
+
+      if (body.length > 10000) {
+        res.writeHead(413);
+        res.end("Request too large");
+        return;
+      }
+    }
+
+    const params = new URLSearchParams(body);
+    const todo = params.get("todo") || "";
+
+    if (todo.trim().length === 0 || todo.length > 140) {
+      res.writeHead(400);
+      res.end("Todo must contain 1-140 characters");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${backendUrl}/todos`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ todo })
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to create todo");
+      }
+
+      res.writeHead(303, {
+        Location: "/"
+      });
+
+      res.end();
+    } catch (error) {
+      console.error(error);
+      res.writeHead(503);
+      res.end("Todo backend unavailable");
+    }
 
     return;
   }
@@ -110,5 +190,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server started in port ${PORT}`);
+  console.log(`Server started on port ${PORT}`);
 });
+
