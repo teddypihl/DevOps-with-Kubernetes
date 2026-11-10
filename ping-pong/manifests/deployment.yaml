@@ -2,8 +2,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  namespace: exercises
   name: ping-pong
+  namespace: exercises
 spec:
   replicas: 1
   selector:
@@ -16,8 +16,24 @@ spec:
     spec:
       containers:
         - name: ping-pong
-          image: ping-pong:2.1
+          image: ping-pong:2.7
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: PGHOST
+              value: postgres-svc
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: postgres
+            - name: PGDATABASE
+              value: pingpong
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ping-pong-db-secret
+                  key: POSTGRES_PASSWORD
 
