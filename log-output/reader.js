@@ -3,11 +3,14 @@ const http = require("node:http");
 const fs = require("node:fs");
 
 const logPath = "/app/files/status.txt";
+const infoPath = "/app/config/information.txt";
 const pingPongUrl = "http://ping-pong-svc:2345/count";
 
 http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/") {
     try {
+      const information = fs.readFileSync(infoPath, "utf8").trim();
+      const message = process.env.MESSAGE;
       const log = fs.readFileSync(logPath, "utf8");
 
       const response = await fetch(pingPongUrl);
@@ -22,7 +25,12 @@ http.createServer(async (req, res) => {
         "Content-Type": "text/plain"
       });
 
-      res.end(`${log}\nPing / Pongs: ${count}`);
+      res.end(
+        `file content: ${information}\n` +
+        `env variable: MESSAGE=${message}\n` +
+        `${log}\n` +
+        `Ping / Pongs: ${count}`
+      );
     } catch (error) {
       console.error(error);
       res.writeHead(503);

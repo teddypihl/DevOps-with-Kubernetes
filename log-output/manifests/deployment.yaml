@@ -2,8 +2,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  namespace: exercises
   name: log-output
+  namespace: exercises
 spec:
   replicas: 1
   selector:
@@ -17,6 +17,9 @@ spec:
       volumes:
         - name: shared-logs
           emptyDir: {}
+        - name: config-volume
+          configMap:
+            name: log-output-config
       containers:
         - name: log-writer
           image: log-writer:1.10
@@ -26,11 +29,19 @@ spec:
               mountPath: /app/files
 
         - name: log-reader
-          image: log-reader:2.1
+          image: log-reader:2.5
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
+          env:
+            - name: MESSAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: log-output-config
+                  key: MESSAGE
           volumeMounts:
             - name: shared-logs
               mountPath: /app/files
+            - name: config-volume
+              mountPath: /app/config
 
