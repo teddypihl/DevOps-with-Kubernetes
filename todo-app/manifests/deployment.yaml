@@ -1,9 +1,8 @@
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  namespace: project
   name: todo-app
+  namespace: project
 spec:
   replicas: 1
   strategy:
@@ -22,14 +21,13 @@ spec:
             claimName: todo-image-claim
       containers:
         - name: todo-app
-          image: todo-app:2.2
+          image: todo-app:2.6
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
-          env:
-            - name: PORT
-              value: "3000"
+          envFrom:
+            - configMapRef:
+                name: todo-app-config
           volumeMounts:
             - name: todo-images
               mountPath: /app/images
-

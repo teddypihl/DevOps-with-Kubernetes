@@ -1,7 +1,8 @@
 
 const http = require("node:http");
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT);
+const maxTodoLength = Number(process.env.MAX_TODO_LENGTH);
 
 const todos = [
   "Learn Kubernetes",
@@ -9,7 +10,7 @@ const todos = [
   "Build a Todo application"
 ];
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/todos") {
     res.writeHead(200, {
       "Content-Type": "application/json"
@@ -24,47 +25,50 @@ http.createServer(async (req, res) => {
 
     for await (const chunk of req) {
       body += chunk;
-      if (body.length > 10000) {
+
+      if (Buffer.byteLength(body) > 10000) {
         res.writeHead(413);
         res.end("Request too large");
         return;
       }
     }
 
-    let todo;
-
     try {
       const data = JSON.parse(body);
-      todo = data.todo;
-    } catch {
+      const todo = data.todo;
+
+      if (
+        typeof todo !== "string" ||
+        todo.trim().length === 0 ||
+        todo.length > maxTodoLength
+      ) {
+        res.writeHead(400);
+        res.end("Invalid todo");
+        return;
+      }
+
+      todos.push(todo.trim());
+
+      res.writeHead(201, {
+        "Content-Type": "application/json"
+      });
+
+      res.end(JSON.stringify({
+        todo: todo.trim()
+      }));
+    } catch (error) {
       res.writeHead(400);
       res.end("Invalid JSON");
-      return;
     }
 
-    if (
-      typeof todo !== "string" ||
-      todo.trim().length === 0 ||
-      todo.length > 140
-    ) {
-      res.writeHead(400);
-      res.end("Todo must contain 1-140 characters");
-      return;
-    }
-
-    todos.push(todo.trim());
-
-    res.writeHead(201, {
-      "Content-Type": "application/json"
-    });
-
-    res.end(JSON.stringify({ todo: todo.trim() }));
     return;
   }
 
   res.writeHead(404);
   res.end("Not Found");
-}).listen(PORT, () => {
+});
+
+server.listen(PORT, () => {
   console.log(`Todo backend running on port ${PORT}`);
 });
 

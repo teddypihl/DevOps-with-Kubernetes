@@ -2,50 +2,15 @@
 const http = require("node:http");
 const fs = require("node:fs");
 
-const PORT = process.env.PORT || 3000;
-const imagePath = "/app/images/image.jpg";
-const cacheTime = 10 * 60 * 1000;
+const PORT = Number(process.env.PORT);
+const backendUrl = process.env.TODO_BACKEND_URL;
+const imageUrl = process.env.IMAGE_URL;
+const imagePath = process.env.IMAGE_PATH;
+const cacheTime = Number(process.env.IMAGE_CACHE_MS);
+const maxTodoLength = Number(process.env.MAX_TODO_LENGTH);
 
-const backendUrl = "http://todo-backend-svc:2345";
-
-let downloadInProgress = null;
-
-async function getImage() {
-  if (fs.existsSync(imagePath)) {
-    const fileAge = Date.now() - fs.statSync(imagePath).mtimeMs;
-
-    if (fileAge < cacheTime) {
-      return fs.readFileSync(imagePath);
-    }
-  }
-
-  if (!downloadInProgress) {
-    downloadInProgress = (async () => {
-      const response = await fetch(
-        `https://picsum.photos/1200?random=${Date.now()}`
-      );
-
-      if (!response.ok) {
-        throw new Error("Image download failed");
-      }
-
-      const image = Buffer.from(await response.arrayBuffer());
-      const tempPath = `${imagePath}.tmp`;
-
-      fs.writeFileSync(tempPath, image);
-      fs.renameSync(tempPath, imagePath);
-
-      return image;
-    })().finally(() => {
-      downloadInProgress = null;
-    });
-  }
-
-  return downloadInProgress;
-}
-
-function escapeHtml(value) {
-  return value
+function escapeHtml(text) {
+  return String(text)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -53,8 +18,29 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-const server = http.createServer(async (req, res) => {
+async function getImage() {
+  if (fs.existsSync(imagePath)) {
+    const age = Date.now() - fs.statSync(imagePath).mtimeMs;
 
+    if (age < cacheTime) {
+      return fs.readFileSync(imagePath);
+    }
+  }
+
+  const response = await fetch(imageUrl);
+
+  if (!response.ok) {
+    throw new Error("Failed to download image");
+  }
+
+  const image = Buffer.from(await response.arrayBuffer());
+
+  fs.writeFileSync(imagePath, image);
+
+  return image;
+}
+
+const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/image") {
     try {
       const image = await getImage();
@@ -67,8 +53,17 @@ const server = http.createServer(async (req, res) => {
       res.end(image);
     } catch (error) {
       console.error(error);
-      res.writeHead(503);
-      res.end("Image unavailable");
+
+      if (fs.existsSync(imagePath)) {
+        res.writeHead(200, {
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "no-store"
+        });
+        res.end(fs.readFileSync(imagePath));
+      } else {
+        res.writeHead(503);
+        res.end("Image unavailable");
+      }
     }
 
     return;
@@ -79,12 +74,12 @@ const server = http.createServer(async (req, res) => {
       const response = await fetch(`${backendUrl}/todos`);
 
       if (!response.ok) {
-        throw new Error("Unable to fetch todos");
+        throw new Error("Failed to fetch todos");
       }
 
       const todos = await response.json();
 
-      const todoList = todos
+      const todoItems = todos
         .map(todo => `<li>${escapeHtml(todo)}</li>`)
         .join("\n");
 
@@ -94,41 +89,43 @@ const server = http.createServer(async (req, res) => {
 
       res.end(`
         <!DOCTYPE html>
-        <html>
+        <html lang="en">
           <head>
-            <title>Todo Application</title>
+            <meta charset="UTF-8">
+            <title>Todo App</title>
           </head>
           <body>
-            <h1>Todo Application</h1>
+            <h1>Todo App</h1>
 
-            <p>Welcome to my Kubernetes Todo App!</p>
+            <img
+              src="/image"
+              alt="Random image"
+              width="600"
+            >
 
-            <img src="/image" alt="Random image" width="600">
+            <h2>Create a new Todo</h2>
 
-            <h2>New Todo</h2>
-
-            <form action="/todos" method="POST">
+            <form method="POST" action="/todos">
               <input
                 type="text"
                 name="todo"
-                maxlength="140"
-                placeholder="Enter a todo"
+                maxlength="${maxTodoLength}"
                 required
               >
-
               <button type="submit">Send</button>
             </form>
 
             <h2>Todos</h2>
 
             <ul>
-              ${todoList}
+              ${todoItems}
             </ul>
           </body>
         </html>
       `);
     } catch (error) {
       console.error(error);
+
       res.writeHead(503);
       res.end("Todo backend unavailable");
     }
@@ -142,7 +139,7 @@ const server = http.createServer(async (req, res) => {
     for await (const chunk of req) {
       body += chunk;
 
-      if (body.length > 10000) {
+      if (Buffer.byteLength(body) > 10000) {
         res.writeHead(413);
         res.end("Request too large");
         return;
@@ -152,9 +149,12 @@ const server = http.createServer(async (req, res) => {
     const params = new URLSearchParams(body);
     const todo = params.get("todo") || "";
 
-    if (todo.trim().length === 0 || todo.length > 140) {
+    if (
+      todo.trim().length === 0 ||
+      todo.length > maxTodoLength
+    ) {
       res.writeHead(400);
-      res.end("Todo must contain 1-140 characters");
+      res.end("Invalid todo");
       return;
     }
 
@@ -164,11 +164,13 @@ const server = http.createServer(async (req, res) => {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ todo })
+        body: JSON.stringify({
+          todo: todo.trim()
+        })
       });
 
       if (!response.ok) {
-        throw new Error("Unable to create todo");
+        throw new Error("Failed to create todo");
       }
 
       res.writeHead(303, {
@@ -178,6 +180,7 @@ const server = http.createServer(async (req, res) => {
       res.end();
     } catch (error) {
       console.error(error);
+
       res.writeHead(503);
       res.end("Todo backend unavailable");
     }
@@ -190,6 +193,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server started on port ${PORT}`);
+  console.log(`Todo app running on port ${PORT}`);
 });
 

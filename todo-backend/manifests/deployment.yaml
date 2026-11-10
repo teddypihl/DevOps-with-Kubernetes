@@ -1,9 +1,8 @@
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  namespace: project
   name: todo-backend
+  namespace: project
 spec:
   replicas: 1
   selector:
@@ -16,8 +15,10 @@ spec:
     spec:
       containers:
         - name: todo-backend
-          image: todo-backend:2.2
+          image: todo-backend:2.6
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
-
+          envFrom:
+            - configMapRef:
+                name: todo-backend-config
