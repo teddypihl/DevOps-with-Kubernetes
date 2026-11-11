@@ -6,3 +6,8 @@ metadata:
 data:
   PORT: "3000"
   MAX_TODO_LENGTH: "140"
+  MAX_BODY_BYTES: "10000"
+  PGHOST: "todo-postgres-svc"
+  PGPORT: "5432"
+  PGUSER: "postgres"
+  PGDATABASE: "todos"
