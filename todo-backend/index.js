@@ -14,6 +14,17 @@ const pool = new Pool({
   database: process.env.PGDATABASE
 });
 
+function logTodo(status, todo, message) {
+  console.log(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    event: "todo_submission",
+    status,
+    todo,
+    length: typeof todo === "string" ? todo.length : null,
+    message
+  }));
+}
+
 async function initializeDatabase() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS todos (
@@ -23,7 +34,6 @@ async function initializeDatabase() {
     )
   `);
 
-  // Add the original example todos only if the table is empty.
   await pool.query(`
     INSERT INTO todos (content)
     SELECT content
@@ -43,7 +53,6 @@ async function getTodos() {
   const result = await pool.query(
     "SELECT content FROM todos ORDER BY id ASC"
   );
-
   return result.rows.map(row => row.content);
 }
 
@@ -52,7 +61,6 @@ async function addTodo(content) {
     "INSERT INTO todos (content) VALUES ($1) RETURNING id, content",
     [content]
   );
-
   return result.rows[0];
 }
 
@@ -64,14 +72,12 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, {
         "Content-Type": "application/json"
       });
-
       res.end(JSON.stringify(todos));
     } catch (error) {
       console.error("Database error:", error);
       res.writeHead(503);
       res.end("Database unavailable");
     }
-
     return;
   }
 
@@ -81,7 +87,8 @@ const server = http.createServer(async (req, res) => {
     for await (const chunk of req) {
       body += chunk;
 
-      if (Buffer.byteLength(body) > maxBodyBytes) {
+      if (Buffer.byteLength(body, "utf8") > maxBodyBytes) {
+        logTodo("rejected", null, "Request body too large");
         res.writeHead(413);
         res.end("Request too large");
         return;
@@ -94,37 +101,50 @@ const server = http.createServer(async (req, res) => {
       const data = JSON.parse(body);
       todo = data.todo;
     } catch {
+      logTodo("rejected", null, "Invalid JSON");
       res.writeHead(400);
       res.end("Invalid JSON");
       return;
     }
 
-    if (
-      typeof todo !== "string" ||
-      todo.trim().length === 0 ||
-      todo.length > maxTodoLength
-    ) {
+    if (typeof todo !== "string" || todo.trim().length === 0) {
+      logTodo("rejected", todo, "Invalid todo");
       res.writeHead(400);
       res.end("Invalid todo");
+      return;
+    }
+
+    if (todo.length > maxTodoLength) {
+      logTodo(
+        "rejected",
+        todo,
+        `Todo exceeds ${maxTodoLength} characters`
+      );
+
+      res.writeHead(400, {
+        "Content-Type": "text/plain"
+      });
+      res.end(`Todo must not exceed ${maxTodoLength} characters`);
       return;
     }
 
     try {
       const savedTodo = await addTodo(todo.trim());
 
+      logTodo("accepted", savedTodo.content, "Todo saved");
+
       res.writeHead(201, {
         "Content-Type": "application/json"
       });
-
       res.end(JSON.stringify({
         todo: savedTodo.content
       }));
     } catch (error) {
       console.error("Database error:", error);
+      logTodo("error", todo, "Database unavailable");
       res.writeHead(503);
       res.end("Database unavailable");
     }
-
     return;
   }
 
@@ -135,7 +155,6 @@ const server = http.createServer(async (req, res) => {
 async function start() {
   try {
     await initializeDatabase();
-
     server.listen(PORT, () => {
       console.log(`Todo backend running on port ${PORT}`);
     });

@@ -1,0 +1,10 @@
+
+alertmanager:
+  enabled: false
+
+pushgateway:
+  enabled: false
+
+server:
+  remoteWrite: []
+
