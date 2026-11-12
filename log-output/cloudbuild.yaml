@@ -1,0 +1,22 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.reader
+      - -t
+      - europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-reader:3.2
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.writer
+      - -t
+      - europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-writer:3.2
+      - .
+
+images:
+  - europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-reader:3.2
+  - europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-writer:3.2

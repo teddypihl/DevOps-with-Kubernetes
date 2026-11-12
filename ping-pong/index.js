@@ -48,6 +48,12 @@ async function incrementCount() {
 
 const server = http.createServer(async (req, res) => {
   try {
+    if (req.method === "GET" && req.url === "/") {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("OK");
+      return;
+    }
+
     if (req.method === "GET" && req.url === "/pingpong") {
       const count = await incrementCount();
 
