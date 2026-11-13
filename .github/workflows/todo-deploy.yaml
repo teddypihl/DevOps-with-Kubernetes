@@ -3,7 +3,7 @@ name: Deploy Todo to GKE
 on:
   push:
     branches:
-      - main
+      - '**'
     paths:
       - 'todo-app/**'
       - 'todo-backend/**'
@@ -70,14 +70,35 @@ jobs:
       - name: Set up Kustomize
         uses: imranismail/setup-kustomize@v3
 
+      - name: Select branch environment
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            echo "TARGET_NAMESPACE=project" >> "$GITHUB_ENV"
+          else
+            echo "TARGET_NAMESPACE=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          fi
+
       - name: Deploy Todo application
         run: |
+          kubectl create namespace "$TARGET_NAMESPACE" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          if [ "$TARGET_NAMESPACE" != "project" ]; then
+            kubectl create secret generic todo-db-secret \
+              -n "$TARGET_NAMESPACE" \
+              --from-literal=POSTGRES_PASSWORD="$(openssl rand -hex 24)" \
+              --dry-run=client -o yaml | kubectl apply -f -
+          fi
+
+          kustomize edit set namespace "$TARGET_NAMESPACE"
           kustomize edit set image todo-app="$FRONTEND_IMAGE"
           kustomize edit set image todo-backend="$BACKEND_IMAGE"
 
           kubectl apply -k .
 
-          kubectl rollout status deployment/todo-app -n project --timeout=300s
-          kubectl rollout status deployment/todo-backend -n project --timeout=300s
+          kubectl rollout status deployment/todo-app \
+            -n "$TARGET_NAMESPACE" --timeout=300s
+          kubectl rollout status deployment/todo-backend \
+            -n "$TARGET_NAMESPACE" --timeout=300s
 
-          kubectl get pods -n project
+          kubectl get pods,pvc -n "$TARGET_NAMESPACE"
