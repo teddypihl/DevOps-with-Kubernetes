@@ -11,9 +11,16 @@ spec:
         - path:
             type: PathPrefix
             value: /pingpong
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /
       backendRefs:
         - name: ping-pong-svc
           port: 2345
+
     - matches:
         - path:
             type: PathPrefix

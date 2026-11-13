@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: ping-pong
-          image: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/ping-pong:3.2
+          image: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/ping-pong:3.4
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
