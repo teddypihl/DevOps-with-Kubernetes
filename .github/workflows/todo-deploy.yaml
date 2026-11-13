@@ -1,0 +1,83 @@
+name: Deploy Todo to GKE
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'todo-app/**'
+      - 'todo-backend/**'
+      - 'kustomization.yaml'
+      - '.github/workflows/todo-deploy.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: ${{ secrets.GKE_PROJECT }}
+  GKE_CLUSTER: dwk-cluster
+  GKE_ZONE: europe-north1-b
+  REGISTRY: europe-north1-docker.pkg.dev
+  REPOSITORY: dwk-images
+
+jobs:
+  build-publish-deploy:
+    name: Build, Publish and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker authentication
+        run: gcloud auth configure-docker "$REGISTRY" --quiet
+
+      - name: Define Docker image tags
+        run: |
+          echo "FRONTEND_IMAGE=$REGISTRY/$PROJECT_ID/$REPOSITORY/todo-app:$GITHUB_SHA" >> "$GITHUB_ENV"
+          echo "BACKEND_IMAGE=$REGISTRY/$PROJECT_ID/$REPOSITORY/todo-backend:$GITHUB_SHA" >> "$GITHUB_ENV"
+
+      - name: Build frontend
+        run: docker build -t "$FRONTEND_IMAGE" ./todo-app
+
+      - name: Build backend
+        run: docker build -t "$BACKEND_IMAGE" ./todo-backend
+
+      - name: Publish images
+        run: |
+          docker push "$FRONTEND_IMAGE"
+          docker push "$BACKEND_IMAGE"
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v3
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          project_id: ${{ env.PROJECT_ID }}
+          location: ${{ env.GKE_ZONE }}
+
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@v3
+
+      - name: Deploy Todo application
+        run: |
+          kustomize edit set image todo-app="$FRONTEND_IMAGE"
+          kustomize edit set image todo-backend="$BACKEND_IMAGE"
+
+          kubectl apply -k .
+
+          kubectl rollout status deployment/todo-app -n project --timeout=300s
+          kubectl rollout status deployment/todo-backend -n project --timeout=300s
+
+          kubectl get pods -n project
