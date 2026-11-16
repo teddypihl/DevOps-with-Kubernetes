@@ -115,6 +115,14 @@ const server = http.createServer(async (req, res) => {
               <button type="submit">Send</button>
             </form>
 
+            <h2>Application controls</h2>
+            <form method="POST" action="/break">
+              <button type="submit">Break app</button>
+            </form>
+            <h2>Application controls</h2>
+            <form method="POST" action="/break">
+              <button type="submit">Break app</button>
+            </form>
             <h2>Todos</h2>
 
             <ul>
@@ -130,6 +138,86 @@ const server = http.createServer(async (req, res) => {
       res.end("Todo backend unavailable");
     }
 
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/break") {
+    try {
+      const response = await fetch(`${backendUrl}/break`, {
+        method: "POST"
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to break backend");
+      }
+
+      res.writeHead(303, { Location: "/" });
+      res.end();
+    } catch (error) {
+      console.error(error);
+      res.writeHead(503);
+      res.end("Backend unavailable");
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/healthz") {
+    res.writeHead(200);
+    res.end("OK");
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/readyz") {
+    try {
+      const response = await fetch(`${backendUrl}/healthz`, {
+        signal: AbortSignal.timeout(2000)
+      });
+      res.writeHead(response.ok ? 200 : 503);
+      res.end(response.ok ? "OK" : "Backend unavailable");
+    } catch (error) {
+      res.writeHead(503);
+      res.end("Backend unavailable");
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/break") {
+    try {
+      const response = await fetch(`${backendUrl}/break`, {
+        method: "POST"
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to break backend");
+      }
+
+      res.writeHead(303, { Location: "/" });
+      res.end();
+    } catch (error) {
+      console.error(error);
+      res.writeHead(503);
+      res.end("Backend unavailable");
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/healthz") {
+    res.writeHead(200);
+    res.end("OK");
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/readyz") {
+    try {
+      const response = await fetch(`${backendUrl}/healthz`, {
+        signal: AbortSignal.timeout(2000)
+      });
+      res.writeHead(response.ok ? 200 : 503);
+      res.end(response.ok ? "OK" : "Backend unavailable");
+    } catch (error) {
+      res.writeHead(503);
+      res.end("Backend unavailable");
+    }
     return;
   }
 

@@ -64,7 +64,41 @@ async function addTodo(content) {
   return result.rows[0];
 }
 
+let isHealthy = true;
+
 const server = http.createServer(async (req, res) => {
+  if (req.method === "GET" && req.url === "/healthz") {
+    if (!isHealthy) {
+      res.writeHead(500);
+      res.end("Application broken");
+      return;
+    }
+
+    try {
+      await pool.query("SELECT 1");
+      res.writeHead(200);
+      res.end("OK");
+    } catch (error) {
+      res.writeHead(503);
+      res.end("Database unavailable");
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/break") {
+    isHealthy = false;
+    console.log("Application deliberately broken");
+    res.writeHead(200);
+    res.end("Application broken");
+    return;
+  }
+
+  if (!isHealthy) {
+    res.writeHead(503);
+    res.end("Application unavailable");
+    return;
+  }
+
   if (req.method === "GET" && req.url === "/todos") {
     try {
       const todos = await getTodos();
