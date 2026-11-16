@@ -12,6 +12,7 @@ resources:
   - todo-backend/manifests/deployment.yaml
   - todo-backend/manifests/service.yaml
   - todo-backend/manifests/gke/postgres.yaml
+  - todo-backend/manifests/gke/backup-cronjob.yaml
   - todo-backend/manifests/cronjob.yaml
 
 images:
