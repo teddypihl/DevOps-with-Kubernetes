@@ -29,10 +29,17 @@ spec:
               mountPath: /app/files
 
         - name: log-reader
-          image: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-reader:3.2
+          image: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-reader:4.1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 1
           env:
             - name: MESSAGE
               valueFrom:

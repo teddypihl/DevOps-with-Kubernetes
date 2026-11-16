@@ -7,6 +7,21 @@ const infoPath = "/app/config/information.txt";
 const pingPongUrl = "http://ping-pong-svc:2345/count";
 
 http.createServer(async (req, res) => {
+  if (req.method === "GET" && req.url === "/healthz") {
+    try {
+      const response = await fetch(pingPongUrl, {
+        signal: AbortSignal.timeout(2000)
+      });
+
+      res.writeHead(response.ok ? 200 : 503);
+      res.end(response.ok ? "OK" : "Ping-pong unavailable");
+    } catch (error) {
+      res.writeHead(503);
+      res.end("Ping-pong unavailable");
+    }
+    return;
+  }
+
   if (req.method === "GET" && req.url === "/") {
     try {
       const information = fs.readFileSync(infoPath, "utf8").trim();
