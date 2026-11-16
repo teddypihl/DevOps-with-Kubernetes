@@ -1,0 +1,50 @@
+name: Delete branch environment
+
+on:
+  delete:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  delete-environment:
+    if: github.event.ref_type == 'branch' && github.event.ref != 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+          project_id: ${{ secrets.GKE_PROJECT }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v3
+        with:
+          cluster_name: dwk-cluster
+          project_id: ${{ secrets.GKE_PROJECT }}
+          location: europe-north1-b
+
+      - name: Delete Kubernetes namespace
+        env:
+          DELETED_BRANCH: ${{ github.event.ref }}
+        run: |
+          if [[ ! "$DELETED_BRANCH" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]]; then
+            echo "Invalid Kubernetes namespace name"
+            exit 1
+          fi
+
+          if [[ "$DELETED_BRANCH" == "main" || "$DELETED_BRANCH" == "project" ]]; then
+            echo "Refusing to delete protected namespace"
+            exit 1
+          fi
+
+          kubectl delete namespace "$DELETED_BRANCH" \
+            --ignore-not-found=true \
+            --wait=true \
+            --timeout=600s
