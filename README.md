@@ -7,3 +7,7 @@ When running DIY PostgreSQL we don’t need to pay for anything but we are the p
 
 Another benefit of using DBaaS is their secure cloud backups which do not exist for us running PostgreSQL locally since our backups must handle security and testing ourselves.
 
+
+## 4.3
+sum(kube_pod_info{namespace="prometheus",created_by_kind="StatefulSet"})
+
