@@ -46,19 +46,24 @@ async function initializeDatabase() {
     WHERE NOT EXISTS (SELECT 1 FROM todos)
   `);
 
+  await pool.query(`
+    ALTER TABLE todos
+    ADD COLUMN IF NOT EXISTS done BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+
   console.log("Todo database initialized");
 }
 
 async function getTodos() {
   const result = await pool.query(
-    "SELECT content FROM todos ORDER BY id ASC"
+    "SELECT id, content, done FROM todos ORDER BY id ASC"
   );
-  return result.rows.map(row => row.content);
+  return result.rows;
 }
 
 async function addTodo(content) {
   const result = await pool.query(
-    "INSERT INTO todos (content) VALUES ($1) RETURNING id, content",
+    "INSERT INTO todos (content) VALUES ($1) RETURNING id, content, done",
     [content]
   );
   return result.rows[0];
@@ -176,6 +181,60 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       console.error("Database error:", error);
       logTodo("error", todo, "Database unavailable");
+      res.writeHead(503);
+      res.end("Database unavailable");
+    }
+    return;
+  }
+
+
+  const todoMatch = req.url.match(/^\/todos\/(\d+)$/);
+
+  if (req.method === "PUT" && todoMatch) {
+    let body = "";
+
+    for await (const chunk of req) {
+      body += chunk;
+      if (Buffer.byteLength(body, "utf8") > maxBodyBytes) {
+        res.writeHead(413);
+        res.end("Request too large");
+        return;
+      }
+    }
+
+    let data;
+    try {
+      data = JSON.parse(body);
+    } catch {
+      res.writeHead(400);
+      res.end("Invalid JSON");
+      return;
+    }
+
+    if (!data || typeof data.done !== "boolean") {
+      res.writeHead(400);
+      res.end("done must be a boolean");
+      return;
+    }
+
+    try {
+      const result = await pool.query(
+        "UPDATE todos SET done = $1 WHERE id = $2 RETURNING id, content, done",
+        [data.done, Number(todoMatch[1])]
+      );
+
+      if (result.rowCount === 0) {
+        res.writeHead(404);
+        res.end("Todo not found");
+        return;
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "application/json"
+      });
+      res.end(JSON.stringify(result.rows[0]));
+    } catch (error) {
+      console.error(error);
       res.writeHead(503);
       res.end("Database unavailable");
     }

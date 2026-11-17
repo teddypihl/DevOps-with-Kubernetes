@@ -80,7 +80,18 @@ const server = http.createServer(async (req, res) => {
       const todos = await response.json();
 
       const todoItems = todos
-        .map(todo => `<li>${escapeHtml(todo)}</li>`)
+        .map(todo => `
+          <li>
+            ${todo.done ? "✅" : "⬜"}
+            ${escapeHtml(todo.content)}
+            ${todo.done ? "" : `
+              <form method="POST" action="/todos/done" style="display:inline">
+                <input type="hidden" name="id" value="${todo.id}">
+                <button type="submit">Mark done</button>
+              </form>
+            `}
+          </li>
+        `)
         .join("\n");
 
       res.writeHead(200, {
@@ -215,6 +226,50 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(response.ok ? 200 : 503);
       res.end(response.ok ? "OK" : "Backend unavailable");
     } catch (error) {
+      res.writeHead(503);
+      res.end("Backend unavailable");
+    }
+    return;
+  }
+
+
+  if (req.method === "POST" && req.url === "/todos/done") {
+    let body = "";
+
+    for await (const chunk of req) {
+      body += chunk;
+      if (Buffer.byteLength(body, "utf8") > 10000) {
+        res.writeHead(413);
+        res.end("Request too large");
+        return;
+      }
+    }
+
+    const id = new URLSearchParams(body).get("id");
+
+    if (!id || !/^[0-9]+$/.test(id)) {
+      res.writeHead(400);
+      res.end("Invalid todo ID");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${backendUrl}/todos/${id}`, {
+        method: "PUT",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({done: true})
+      });
+
+      if (!response.ok) {
+        res.writeHead(response.status);
+        res.end("Could not mark todo as done");
+        return;
+      }
+
+      res.writeHead(303, {Location: "/"});
+      res.end();
+    } catch (error) {
+      console.error(error);
       res.writeHead(503);
       res.end("Backend unavailable");
     }
