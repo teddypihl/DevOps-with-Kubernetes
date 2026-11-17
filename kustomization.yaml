@@ -16,6 +16,7 @@ resources:
   - todo-backend/manifests/cronjob.yaml
   - broadcaster/deployment.yaml
 
+  - broadcaster/manifests/gitops-deployment.json
 images:
   - name: todo-app
     newName: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/todo-app
