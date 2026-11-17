@@ -13,6 +13,11 @@ on:
       - 'environments/**'
       - '.github/workflows/todo-deploy.yaml'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Git tag to deploy to production
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -28,7 +33,7 @@ env:
   REPOSITORY: dwk-images
 
 jobs:
-  build-publish-release:
+  release:
     name: Build, Publish and Release
     runs-on: ubuntu-latest
 
@@ -37,7 +42,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: true
+
+      - name: Determine release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ -n "$RELEASE_TAG" ]]; then
+            SHA=$(git rev-list -n 1 "$RELEASE_TAG")
+            echo "RELEASE_SHA=$SHA" >> "$GITHUB_ENV"
+            echo "TARGET_BRANCH=production" >> "$GITHUB_ENV"
+            git checkout --detach "$SHA"
+          elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "RELEASE_SHA=$GITHUB_SHA" >> "$GITHUB_ENV"
+            echo "TARGET_BRANCH=production" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_SHA=$GITHUB_SHA" >> "$GITHUB_ENV"
+            echo "TARGET_BRANCH=main" >> "$GITHUB_ENV"
+          fi
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
@@ -49,44 +71,40 @@ jobs:
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v3
 
-      - name: Configure Docker authentication
+      - name: Configure Docker
         run: gcloud auth configure-docker "$REGISTRY" --quiet
 
-      - name: Build and publish images
+      - name: Build and publish
+        shell: bash
         run: |
           PREFIX="$REGISTRY/$PROJECT_ID/$REPOSITORY"
 
           for APP in todo-app todo-backend broadcaster; do
-            docker build -t "$PREFIX/$APP:$GITHUB_SHA" "./$APP"
-            docker push "$PREFIX/$APP:$GITHUB_SHA"
+            docker build -t "$PREFIX/$APP:$RELEASE_SHA" "./$APP"
+            docker push "$PREFIX/$APP:$RELEASE_SHA"
           done
 
-      - name: Prepare release branch
+      - name: Prepare GitOps branch
         shell: bash
         run: |
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            if git ls-remote --exit-code --heads origin production >/dev/null; then
-              git fetch origin production
-              git switch -C production origin/production
-              git restore --source="$GITHUB_SHA" --staged --worktree .
-            else
-              git switch -C production "$GITHUB_SHA"
-            fi
-          else
-            git fetch origin main
-            git switch -C main origin/main
+          git fetch origin "$TARGET_BRANCH"
+          git switch -C "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+
+          if [[ "$TARGET_BRANCH" == "production" ]]; then
+            git restore --source="$RELEASE_SHA" -- environments/
           fi
 
-      - name: Update image versions
+      - name: Update deployment images
+        shell: bash
         run: |
           python3 - <<'PY'
           import os
           import re
           from pathlib import Path
 
-          path = Path("environments/base/kustomization.yaml")
-          content = path.read_text()
-          sha = os.environ["GITHUB_SHA"]
+          p = Path("environments/base/kustomization.yaml")
+          text = p.read_text()
+          sha = os.environ["RELEASE_SHA"]
 
           for name in ("todo-app", "todo-backend", "broadcaster"):
               pattern = (
@@ -94,30 +112,32 @@ jobs:
                   rf'\s*newName: [^\n]+\n'
                   rf'\s*newTag: )("[^"]+"|\S+)'
               )
-              content, count = re.subn(
+              text, count = re.subn(
                   pattern,
-                  lambda match: match.group(1) + f'"{sha}"',
-                  content
+                  lambda m: m.group(1) + f'"{sha}"',
+                  text
               )
               if count != 1:
-                  raise RuntimeError(f"Cannot update image: {name}")
+                  raise RuntimeError(f"Image not found: {name}")
 
-          path.write_text(content)
+          p.write_text(text)
           PY
 
-      - name: Commit release
+      - name: Validate deployment
+        shell: bash
+        run: |
+          kubectl kustomize environments/overlays/"$TARGET_BRANCH" > /dev/null
+
+      - name: Commit deployment configuration
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add environments/base/kustomization.yaml
+          git add environments/
 
           if ! git diff --cached --quiet; then
-            git commit -m "Release Todo images $GITHUB_SHA [skip ci]"
+            git commit -m "Release Todo images $RELEASE_SHA [skip ci]"
           fi
 
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            git push origin HEAD:production
-          else
-            git push origin HEAD:main
-          fi
+          git push origin "HEAD:$TARGET_BRANCH"
