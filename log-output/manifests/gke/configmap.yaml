@@ -7,5 +7,5 @@ metadata:
 data:
   information.txt: |
     this text is from file
-  MESSAGE: "hello world"
+  MESSAGE: "GitOps automatic deployment 4.7"
 
