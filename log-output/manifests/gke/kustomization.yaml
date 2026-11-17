@@ -11,7 +11,7 @@ resources:
 images:
   - name: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-writer
     newName: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-writer
-    newTag: "3.2"
+    newTag: "43a5839e8245e5a0e16fbdc0f293b6cd6a77a685"
   - name: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-reader
     newName: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-reader
-    newTag: "4.1"
+    newTag: "43a5839e8245e5a0e16fbdc0f293b6cd6a77a685"
