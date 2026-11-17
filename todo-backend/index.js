@@ -10,7 +10,7 @@ async function publishTodoEvent(type, todo) {
   try {
     if (!natsConnection) return;
     natsConnection.publish(
-      "todos.events",
+      process.env.NATS_SUBJECT || "todos.events",
       natsCodec.encode(JSON.stringify({ type, todo }))
     );
     await natsConnection.flush();

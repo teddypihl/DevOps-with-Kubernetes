@@ -1,0 +1,52 @@
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: wikipedia-todo
+  namespace: project
+spec:
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: wikipedia-todo
+              image: curlimages/curl:8.16.0
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+
+                  for attempt in 1 2 3 4 5; do
+                    ARTICLE_URL=$(curl -fsSL \
+                      -o /dev/null \
+                      -w '%{url_effective}' \
+                      https://en.wikipedia.org/wiki/Special:Random)
+
+                    TODO="Read ${ARTICLE_URL}"
+
+                    if [ ${#TODO} -le 140 ]; then
+                      echo "Creating todo: ${TODO}"
+
+                      curl -fsS \
+                        -X POST \
+                        -H "Content-Type: application/json" \
+                        -d "{\"todo\":\"${TODO}\"}" \
+                        http://todo-backend-svc:2345/todos
+
+                      echo
+                      echo "Todo successfully created"
+                      exit 0
+                    fi
+
+                    echo "Article URL too long. Trying another..."
+                  done
+
+                  echo "Unable to find a short enough article URL"
+                  exit 1
+

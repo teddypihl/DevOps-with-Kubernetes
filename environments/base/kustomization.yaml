@@ -1,0 +1,119 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: project
+
+resources:
+  - resources/todo-app/manifests/configmap.yaml
+  - resources/todo-app/manifests/deployment.yaml
+  - resources/todo-app/manifests/service.yaml
+  - resources/todo-app/manifests/image-pvc.yaml
+  - resources/todo-backend/manifests/configmap.yaml
+  - resources/todo-backend/manifests/deployment.yaml
+  - resources/todo-backend/manifests/service.yaml
+  - resources/todo-backend/manifests/gke/postgres.yaml
+  - resources/todo-backend/manifests/cronjob.yaml
+  - resources/broadcaster/deployment.yaml
+
+images:
+  - name: todo-app
+    newName: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/todo-app
+    newTag: "323e7c63bfda7a932eef2757aae469d228316205"
+  - name: todo-backend
+    newName: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/todo-backend
+    newTag: "323e7c63bfda7a932eef2757aae469d228316205"
+
+  - name: broadcaster
+    newName: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/broadcaster
+    newTag: "323e7c63bfda7a932eef2757aae469d228316205"
+
+patches:
+  - target:
+      kind: Deployment
+      name: todo-app
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+  - target:
+      kind: Deployment
+      name: todo-backend
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+  - target:
+      kind: StatefulSet
+      name: todo-postgres-ss
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+  - target:
+      kind: Deployment
+      name: todo-backend
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/readinessProbe
+        value:
+          httpGet:
+            path: /healthz
+            port: 3000
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+      - op: add
+        path: /spec/template/spec/containers/0/livenessProbe
+        value:
+          httpGet:
+            path: /healthz
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+
+  - target:
+      kind: Deployment
+      name: todo-app
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/readinessProbe
+        value:
+          httpGet:
+            path: /readyz
+            port: 3000
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 3
+      - op: add
+        path: /spec/template/spec/containers/0/livenessProbe
+        value:
+          httpGet:
+            path: /healthz
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3

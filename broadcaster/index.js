@@ -7,7 +7,7 @@ async function main() {
     servers: process.env.NATS_URL
   });
 
-  const subscription = nc.subscribe("todos.events", {
+  const subscription = nc.subscribe(process.env.NATS_SUBJECT || "todos.events", {
     queue: "todo-broadcasters"
   });
 
@@ -20,6 +20,11 @@ async function main() {
       const text = event.type === "created"
         ? `A todo was created: ${event.todo.content}`
         : `A todo was updated: ${event.todo.content} (done: ${event.todo.done})`;
+
+      if (process.env.STAGING_MODE === "true") {
+        console.log("Staging notification:", text);
+        continue;
+      }
 
       const response = await fetch(process.env.WEBHOOK_URL, {
         method: "POST",

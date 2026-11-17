@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: production
+
+resources:
+  - ../../base
+  - backup-cronjob.yaml
+  - backup-serviceaccount.yaml
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: todo-backend-config
+    patch: |-
+      - op: add
+        path: /data/NATS_SUBJECT
+        value: todos.events.production
+
+  - target:
+      kind: Deployment
+      name: broadcaster
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: NATS_SUBJECT
+          value: todos.events.production

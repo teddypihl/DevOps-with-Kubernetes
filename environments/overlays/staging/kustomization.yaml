@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: staging
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: todo-backend-config
+    patch: |-
+      - op: add
+        path: /data/NATS_SUBJECT
+        value: todos.events.staging
+
+  - target:
+      kind: Deployment
+      name: broadcaster
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: remove
+        path: /spec/template/spec/containers/0/env/1
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: STAGING_MODE
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: NATS_SUBJECT
+          value: todos.events.staging
