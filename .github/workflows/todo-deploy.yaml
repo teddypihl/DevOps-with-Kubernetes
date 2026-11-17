@@ -1,26 +1,22 @@
 name: Todo Project GitOps
 
+run-name: Deploy ${{ github.event.inputs.release_tag != '' && format('production ({0})', github.event.inputs.release_tag) || github.ref_type == 'tag' && format('production ({0})', github.ref_name) || 'staging' }}
+
 on:
   push:
     branches:
       - main
     tags:
       - '*'
-    paths:
-      - 'todo-app/**'
-      - 'todo-backend/**'
-      - 'broadcaster/**'
-      - 'environments/**'
-      - '.github/workflows/todo-deploy.yaml'
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Git tag to deploy to production
+        description: Existing Git tag for production
         required: false
         type: string
 
 permissions:
-  contents: write
+  contents: read
   id-token: write
 
 concurrency:
@@ -34,32 +30,32 @@ env:
 
 jobs:
   release:
-    name: Build, Publish and Release
+    name: Build and publish
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
+      - name: Checkout application code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Determine release
+      - name: Select environment and version
         shell: bash
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           if [[ -n "$RELEASE_TAG" ]]; then
             SHA=$(git rev-list -n 1 "$RELEASE_TAG")
-            echo "RELEASE_SHA=$SHA" >> "$GITHUB_ENV"
-            echo "TARGET_BRANCH=production" >> "$GITHUB_ENV"
             git checkout --detach "$SHA"
+            TARGET=production
           elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            echo "RELEASE_SHA=$GITHUB_SHA" >> "$GITHUB_ENV"
-            echo "TARGET_BRANCH=production" >> "$GITHUB_ENV"
+            SHA="$GITHUB_SHA"
+            TARGET=production
           else
-            echo "RELEASE_SHA=$GITHUB_SHA" >> "$GITHUB_ENV"
-            echo "TARGET_BRANCH=main" >> "$GITHUB_ENV"
+            SHA="$GITHUB_SHA"
+            TARGET=main
           fi
+          echo "RELEASE_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "TARGET_BRANCH=$TARGET" >> "$GITHUB_ENV"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
@@ -68,33 +64,37 @@ jobs:
           service_account: ${{ secrets.SERVICE_ACCOUNT }}
           project_id: ${{ env.PROJECT_ID }}
 
-      - name: Set up Google Cloud SDK
+      - name: Set up Google Cloud
         uses: google-github-actions/setup-gcloud@v3
 
-      - name: Configure Docker
+      - name: Configure Docker authentication
         run: gcloud auth configure-docker "$REGISTRY" --quiet
 
-      - name: Build and publish
+      - name: Build and publish application images
         shell: bash
         run: |
           PREFIX="$REGISTRY/$PROJECT_ID/$REPOSITORY"
-
           for APP in todo-app todo-backend broadcaster; do
             docker build -t "$PREFIX/$APP:$RELEASE_SHA" "./$APP"
             docker push "$PREFIX/$APP:$RELEASE_SHA"
           done
 
-      - name: Prepare GitOps branch
+      - name: Checkout separate GitOps repository
+        uses: actions/checkout@v4
+        with:
+          repository: teddypihl/DevOps-with-Kubernetes-gitops
+          ref: main
+          path: gitops
+          ssh-key: ${{ secrets.GITOPS_DEPLOY_KEY }}
+          persist-credentials: true
+
+      - name: Select configuration branch
         shell: bash
         run: |
-          git fetch origin "$TARGET_BRANCH"
-          git switch -C "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+          git -C gitops fetch origin "$TARGET_BRANCH"
+          git -C gitops switch -C "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
 
-          if [[ "$TARGET_BRANCH" == "production" ]]; then
-            git restore --source="$RELEASE_SHA" -- environments/
-          fi
-
-      - name: Update deployment images
+      - name: Update GitOps image versions
         shell: bash
         run: |
           python3 - <<'PY'
@@ -102,8 +102,8 @@ jobs:
           import re
           from pathlib import Path
 
-          p = Path("environments/base/kustomization.yaml")
-          text = p.read_text()
+          path = Path("gitops/environments/base/kustomization.yaml")
+          content = path.read_text()
           sha = os.environ["RELEASE_SHA"]
 
           for name in ("todo-app", "todo-backend", "broadcaster"):
@@ -112,32 +112,26 @@ jobs:
                   rf'\s*newName: [^\n]+\n'
                   rf'\s*newTag: )("[^"]+"|\S+)'
               )
-              text, count = re.subn(
+              content, count = re.subn(
                   pattern,
-                  lambda m: m.group(1) + f'"{sha}"',
-                  text
+                  lambda match: match.group(1) + f'"{sha}"',
+                  content
               )
               if count != 1:
-                  raise RuntimeError(f"Image not found: {name}")
+                  raise RuntimeError(f"Image entry missing: {name}")
 
-          p.write_text(text)
+          path.write_text(content)
           PY
 
-      - name: Validate deployment
+      - name: Push GitOps configuration
         shell: bash
         run: |
-          kubectl kustomize environments/overlays/"$TARGET_BRANCH" > /dev/null
+          git -C gitops config user.name "github-actions[bot]"
+          git -C gitops config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C gitops add environments/base/kustomization.yaml
 
-      - name: Commit deployment configuration
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add environments/
-
-          if ! git diff --cached --quiet; then
-            git commit -m "Release Todo images $RELEASE_SHA [skip ci]"
+          if ! git -C gitops diff --cached --quiet; then
+            git -C gitops commit -m "4.10"
           fi
 
-          git push origin "HEAD:$TARGET_BRANCH"
+          git -C gitops push origin "HEAD:$TARGET_BRANCH"
