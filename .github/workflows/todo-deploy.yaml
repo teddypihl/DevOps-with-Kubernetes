@@ -7,6 +7,7 @@ on:
     paths:
       - 'todo-app/**'
       - 'todo-backend/**'
+      - 'broadcaster/**'
       - 'kustomization.yaml'
       - '.github/workflows/todo-deploy.yaml'
   workflow_dispatch:
@@ -48,6 +49,7 @@ jobs:
         run: |
           echo "FRONTEND_IMAGE=$REGISTRY/$PROJECT_ID/$REPOSITORY/todo-app:$GITHUB_SHA" >> "$GITHUB_ENV"
           echo "BACKEND_IMAGE=$REGISTRY/$PROJECT_ID/$REPOSITORY/todo-backend:$GITHUB_SHA" >> "$GITHUB_ENV"
+          echo "BROADCASTER_IMAGE=$REGISTRY/$PROJECT_ID/$REPOSITORY/broadcaster:$GITHUB_SHA" >> "$GITHUB_ENV"
 
       - name: Build frontend
         run: docker build -t "$FRONTEND_IMAGE" ./todo-app
@@ -55,10 +57,14 @@ jobs:
       - name: Build backend
         run: docker build -t "$BACKEND_IMAGE" ./todo-backend
 
+      - name: Build broadcaster
+        run: docker build -t "$BROADCASTER_IMAGE" ./broadcaster
+
       - name: Publish images
         run: |
           docker push "$FRONTEND_IMAGE"
           docker push "$BACKEND_IMAGE"
+          docker push "$BROADCASTER_IMAGE"
 
       - name: Get GKE credentials
         uses: google-github-actions/get-gke-credentials@v3
@@ -93,12 +99,16 @@ jobs:
           kustomize edit set namespace "$TARGET_NAMESPACE"
           kustomize edit set image todo-app="$FRONTEND_IMAGE"
           kustomize edit set image todo-backend="$BACKEND_IMAGE"
+          kustomize edit set image broadcaster="$BROADCASTER_IMAGE"
 
           kubectl apply -k .
 
           kubectl rollout status deployment/todo-app \
             -n "$TARGET_NAMESPACE" --timeout=300s
           kubectl rollout status deployment/todo-backend \
+            -n "$TARGET_NAMESPACE" --timeout=300s
+
+          kubectl rollout status deployment/broadcaster \
             -n "$TARGET_NAMESPACE" --timeout=300s
 
           kubectl get pods,pvc -n "$TARGET_NAMESPACE"

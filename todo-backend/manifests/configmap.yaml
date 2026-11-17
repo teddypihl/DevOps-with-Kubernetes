@@ -11,3 +11,4 @@ data:
   PGPORT: "5432"
   PGUSER: "postgres"
   PGDATABASE: "todos"
+  NATS_URL: "nats://my-nats.nats.svc.cluster.local:4222"

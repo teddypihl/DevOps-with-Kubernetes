@@ -1,6 +1,24 @@
 
 const http = require("node:http");
 const { Pool } = require("pg");
+const { connect, StringCodec } = require("nats");
+
+let natsConnection;
+const natsCodec = StringCodec();
+
+async function publishTodoEvent(type, todo) {
+  try {
+    if (!natsConnection) return;
+    natsConnection.publish(
+      "todos.events",
+      natsCodec.encode(JSON.stringify({ type, todo }))
+    );
+    await natsConnection.flush();
+    console.log("NATS published:", type, todo.id);
+  } catch (error) {
+    console.error("NATS publish failed:", error);
+  }
+}
 
 const PORT = Number(process.env.PORT);
 const maxTodoLength = Number(process.env.MAX_TODO_LENGTH);
@@ -169,6 +187,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const savedTodo = await addTodo(todo.trim());
+      await publishTodoEvent("created", savedTodo);
 
       logTodo("accepted", savedTodo.content, "Todo saved");
 
@@ -232,6 +251,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, {
         "Content-Type": "application/json"
       });
+      await publishTodoEvent("updated", result.rows[0]);
       res.end(JSON.stringify(result.rows[0]));
     } catch (error) {
       console.error(error);
@@ -248,6 +268,14 @@ const server = http.createServer(async (req, res) => {
 async function start() {
   try {
     await initializeDatabase();
+    try {
+      natsConnection = await connect({
+        servers: process.env.NATS_URL
+      });
+      console.log("Connected to NATS");
+    } catch (error) {
+      console.error("Initial NATS connection failed:", error);
+    }
     server.listen(PORT, () => {
       console.log(`Todo backend running on port ${PORT}`);
     });
