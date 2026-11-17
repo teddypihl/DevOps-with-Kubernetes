@@ -7,3 +7,11 @@ resources:
   - deployment.yaml
   - configmap.yaml
   - service.yaml
+
+images:
+  - name: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-writer
+    newName: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-writer
+    newTag: "3.2"
+  - name: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-reader
+    newName: europe-north1-docker.pkg.dev/total-amulet-514412-b7/dwk-images/log-reader
+    newTag: "4.1"

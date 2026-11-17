@@ -1,0 +1,100 @@
+name: Log Output GitOps
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'log-output/**'
+      - '.github/workflows/log-output-gitops.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  PROJECT_ID: ${{ secrets.GKE_PROJECT }}
+  REGISTRY: europe-north1-docker.pkg.dev
+  REPOSITORY: dwk-images
+
+jobs:
+  build-publish-release:
+    name: Build, Publish and Update GitOps
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker authentication
+        run: gcloud auth configure-docker "$REGISTRY" --quiet
+
+      - name: Define image names
+        run: |
+          echo "WRITER_IMAGE=$REGISTRY/$PROJECT_ID/$REPOSITORY/log-writer:$GITHUB_SHA" >> "$GITHUB_ENV"
+          echo "READER_IMAGE=$REGISTRY/$PROJECT_ID/$REPOSITORY/log-reader:$GITHUB_SHA" >> "$GITHUB_ENV"
+
+      - name: Build both images
+        run: |
+          docker build -f log-output/Dockerfile.writer -t "$WRITER_IMAGE" log-output
+          docker build -f log-output/Dockerfile.reader -t "$READER_IMAGE" log-output
+
+      - name: Publish both images
+        run: |
+          docker push "$WRITER_IMAGE"
+          docker push "$READER_IMAGE"
+
+      - name: Update image versions in Kustomize
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path("log-output/manifests/gke/kustomization.yaml")
+          content = path.read_text()
+          sha = os.environ["GITHUB_SHA"]
+
+          for image in ("log-writer", "log-reader"):
+              pattern = (
+                  rf'(newName: [^\n]*/{image}\n'
+                  rf'\s*newTag: )("[^"]+"|\S+)'
+              )
+              content, count = re.subn(
+                  pattern,
+                  lambda match: match.group(1) + f'"{sha}"',
+                  content,
+              )
+              if count != 1:
+                  raise RuntimeError(f"Could not update {image} image tag")
+
+          path.write_text(content)
+          PY
+
+      - name: Commit new image versions to GitHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add log-output/manifests/gke/kustomization.yaml
+
+          if git diff --cached --quiet; then
+            echo "No image version changes"
+            exit 0
+          fi
+
+          git commit -m "Release log-output images $GITHUB_SHA [skip ci]"
+          git push origin HEAD:main
