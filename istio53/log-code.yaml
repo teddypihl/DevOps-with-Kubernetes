@@ -1,0 +1,37 @@
+apiVersion: v1
+data:
+  index.js: |
+    const http = require("node:http");
+    const { randomUUID } = require("node:crypto");
+
+    const id = randomUUID();
+
+    setInterval(() => {
+      console.log(`${new Date().toISOString()}: ${id}`);
+    }, 5000);
+
+    http.createServer(async (req, res) => {
+      if (req.url !== "/") {
+        res.writeHead(404);
+        return res.end("Not Found");
+      }
+
+      try {
+        const response = await fetch("http://greeter-svc/", {
+          signal: AbortSignal.timeout(3000)
+        });
+
+        if (!response.ok) throw new Error("Greeter unavailable");
+
+        const greeting = await response.text();
+
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end(`${new Date().toISOString()}: ${id}\n${greeting}`);
+      } catch (error) {
+        res.writeHead(503);
+        res.end("Greeter unavailable");
+      }
+    }).listen(3000);
+kind: ConfigMap
+metadata:
+  name: log-output-53-code
