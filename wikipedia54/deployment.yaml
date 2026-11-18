@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wikipedia-54
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wikipedia-54
+  template:
+    metadata:
+      labels:
+        app: wikipedia-54
+    spec:
+      volumes:
+        - name: wikipedia-pages
+          emptyDir: {}
+
+      initContainers:
+        - name: download-kubernetes
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              curl -fLsS --retry 2 --max-time 45 \
+                https://en.wikipedia.org/wiki/Kubernetes \
+                -o /shared/index.html
+          volumeMounts:
+            - name: wikipedia-pages
+              mountPath: /shared
+
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: wikipedia-pages
+              mountPath: /usr/share/nginx/html
+
+        - name: wikipedia-sidecar
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              while true; do
+                DELAY=$((300 + $(od -An -N4 -tu4 /dev/urandom) % 601))
+                echo "Next Wikipedia update in ${DELAY} seconds"
+                sleep "$DELAY"
+
+                echo "Downloading random Wikipedia article"
+                if curl -fLsS --retry 2 --max-time 45 \
+                  https://en.wikipedia.org/wiki/Special:Random \
+                  -o /shared/index.html.tmp; then
+                  mv /shared/index.html.tmp /shared/index.html
+                  echo "Wikipedia page updated"
+                else
+                  rm -f /shared/index.html.tmp
+                  echo "Download failed; keeping previous page"
+                fi
+              done
+          volumeMounts:
+            - name: wikipedia-pages
+              mountPath: /shared
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wikipedia-54-svc
+  namespace: default
+spec:
+  selector:
+    app: wikipedia-54
+  ports:
+    - port: 80
+      targetPort: 80
