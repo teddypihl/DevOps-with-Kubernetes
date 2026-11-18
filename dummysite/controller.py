@@ -1,0 +1,162 @@
+import json
+import os
+import ssl
+import time
+import urllib.request
+import urllib.error
+
+NAMESPACE = os.getenv("POD_NAMESPACE", "dummysite-system")
+HOST = os.environ["KUBERNETES_SERVICE_HOST"]
+PORT = os.getenv("KUBERNETES_SERVICE_PORT_HTTPS", "443")
+API = f"https://{HOST}:{PORT}"
+
+TOKEN = open(
+    "/var/run/secrets/kubernetes.io/serviceaccount/token"
+).read().strip()
+
+CA = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+CONTEXT = ssl.create_default_context(cafile=CA)
+
+
+def kubernetes(method, path, payload=None):
+    data = json.dumps(payload).encode() if payload is not None else None
+
+    request = urllib.request.Request(
+        API + path,
+        data=data,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {TOKEN}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    with urllib.request.urlopen(
+        request, context=CONTEXT, timeout=20
+    ) as response:
+        return json.load(response)
+
+
+def exists(path):
+    try:
+        kubernetes("GET", path)
+        return True
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return False
+        raise
+
+
+def create_if_missing(path, name, resource):
+    if exists(f"{path}/{name}"):
+        return
+
+    try:
+        kubernetes("POST", path, resource)
+        print(f"Created {resource['kind']}: {name}", flush=True)
+    except urllib.error.HTTPError as error:
+        if error.code != 409:
+            raise
+
+
+def download_html(url):
+    if not url.startswith(("https://", "http://")):
+        raise ValueError("website_url must use HTTP or HTTPS")
+
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "DummySiteController/1.0"}
+    )
+
+    with urllib.request.urlopen(request, timeout=20) as response:
+        content = response.read(500000)
+        encoding = response.headers.get_content_charset() or "utf-8"
+        return content.decode(encoding, errors="replace")
+
+
+def reconcile(site):
+    name = site["metadata"]["name"]
+    url = site["spec"]["website_url"]
+
+    app = f"dummysite-{name}"
+    labels = {"app": app}
+
+    prefix = f"/api/v1/namespaces/{NAMESPACE}"
+    deployment_path = f"/apis/apps/v1/namespaces/{NAMESPACE}/deployments"
+
+    if not exists(f"{prefix}/configmaps/{app}"):
+        html = download_html(url)
+
+        configmap = {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": app, "namespace": NAMESPACE},
+            "data": {"index.html": html},
+        }
+
+        create_if_missing(f"{prefix}/configmaps", app, configmap)
+
+    deployment = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {"name": app, "namespace": NAMESPACE},
+        "spec": {
+            "replicas": 1,
+            "selector": {"matchLabels": labels},
+            "template": {
+                "metadata": {"labels": labels},
+                "spec": {
+                    "containers": [{
+                        "name": "nginx",
+                        "image": "nginx:1.27-alpine",
+                        "ports": [{"containerPort": 80}],
+                        "volumeMounts": [{
+                            "name": "website",
+                            "mountPath": "/usr/share/nginx/html",
+                            "readOnly": True,
+                        }],
+                    }],
+                    "volumes": [{
+                        "name": "website",
+                        "configMap": {"name": app},
+                    }],
+                },
+            },
+        },
+    }
+
+    create_if_missing(deployment_path, app, deployment)
+
+    service = {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {"name": app, "namespace": NAMESPACE},
+        "spec": {
+            "selector": labels,
+            "ports": [{"port": 80, "targetPort": 80}],
+        },
+    }
+
+    create_if_missing(f"{prefix}/services", app, service)
+
+    print(f"Reconciled {name}: {url}", flush=True)
+
+
+print("DummySite controller started", flush=True)
+
+while True:
+    try:
+        sites = kubernetes(
+            "GET",
+            f"/apis/stable.dwk/v1/namespaces/{NAMESPACE}/dummysites",
+        )
+
+        for site in sites.get("items", []):
+            try:
+                reconcile(site)
+            except Exception as error:
+                print(f"Reconcile error: {error}", flush=True)
+
+    except Exception as error:
+        print(f"Controller error: {error}", flush=True)
+
+    time.sleep(10)
